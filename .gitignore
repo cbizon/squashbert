@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# data + model artifacts
+data/
+caches/
+checkpoints/
+*.npy
+*.npz
+*.memmap
+*.pt
+*.pth
+
+.DS_Store
+.env
