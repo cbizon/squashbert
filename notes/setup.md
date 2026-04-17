@@ -17,8 +17,22 @@ to run on a CUDA machine, not the dev laptop. This file is the handoff.
 git clone https://github.com/cbizon/squashbert.git
 cd squashbert
 uv sync
-uv run pytest          # should pass without a GPU
+uv run pytest                          # fast: 28 tests, no GPU needed
+SQUASHBERT_RUN_SLOW=1 uv run pytest    # also runs the SAPBERT + integration tests
 ```
+
+## Extracting the KGX bundle
+
+The inputs come as a `translator_kg.tar.zst` bundle containing `nodes.jsonl`,
+`edges.jsonl`, and `graph-metadata.json`. Decompress once — this writes ~30 GB.
+
+```bash
+cd data
+tar --use-compress-program=unzstd -xf /path/to/translator_kg.tar.zst
+# produces: nodes.jsonl, edges.jsonl, graph-metadata.json
+```
+
+All pipeline scripts take plain jsonl paths.
 
 ## Pipeline
 
