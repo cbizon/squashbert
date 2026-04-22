@@ -38,21 +38,40 @@ All pipeline scripts take plain jsonl paths.
 
 1. **Node embedding cache** — [CLS]-pooled SAPBERT on every node name.
    ```bash
-   uv run python -m squashbert.scripts.build_node_cache \
+   'uv run python -m scripts.build_node_cache \
        --nodes path/to/nodes.jsonl --out caches/nodes
    ```
 2. **Edge-type embedding cache** — [CLS]-pooled SAPBERT on each distinct edge-type
    rendering (forward and reverse).
    ```bash
-   uv run python -m squashbert.scripts.build_edge_cache \
+   uv run python -m scripts.build_edge_cache \
        --edges path/to/edges.jsonl --nodes path/to/nodes.jsonl --out caches/edges
    ```
 3. **Train** — streaming path generation; cosine loss; stop on plateau.
+
+   **Standard training** (uses [CLS]-pooled caches as inputs, mean-pooled targets):
    ```bash
-   uv run python -m squashbert.scripts.train_mlp --hops 1 --out checkpoints/hop1
-   uv run python -m squashbert.scripts.train_mlp --hops 2 --out checkpoints/hop2
-   uv run python -m squashbert.scripts.train_mlp --hops 3 --out checkpoints/hop3
+   uv run python -m scripts.train_mlp --hops 1 --out checkpoints/hop1 --node_cache caches/nodes --edge_cache caches/edges --nodes /path/to/nodes.jsonl
+   uv run python -m scripts.train_mlp --hops 2 --out checkpoints/hop2 --node_cache caches/nodes --edge_cache caches/edges --nodes /path/to/nodes.jsonl
+   uv run python -m scripts.train_mlp --hops 3 --out checkpoints/hop3 --node_cache caches/nodes --edge_cache caches/edges --nodes /path/to/nodes.jsonl
    ```
+
+   **Alternative approaches** (see `notes/improving_1hop.md` for details):
+   - **Mean pooling**: Use mean pooling for both inputs and targets (recommended for better 1-hop performance).
+     Build mean-pooled caches first, then train:
+     ```bash
+     uv run python scripts/build_node_cache.py --pooling mean --nodes data/nodes.jsonl --out caches/nodes_mean
+     uv run python scripts/build_edge_cache.py --pooling mean --nodes data/nodes.jsonl --edges data/edges.jsonl --out caches/edges_mean
+     uv run python scripts/train_mlp_mean_pooling.py --hops 1 --nodes data/nodes.jsonl --node-cache caches/nodes_mean --edge-cache caches/edges_mean --out checkpoints/hop1_mean
+     ```
+   - **Deep architecture**: 4-layer MLP with residual connections (2048 hidden dims)
+     ```bash
+     uv run python scripts/train_mlp_deep.py --hops 1 --nodes data/nodes.jsonl --node-cache caches/nodes --edge-cache caches/edges --out checkpoints/hop1_deep
+     ```
+   - **Contrastive loss**: Add negative pairs for more discriminative embeddings
+     ```bash
+     uv run python scripts/train_mlp_contrastive.py --hops 1 --nodes data/nodes.jsonl --node-cache caches/nodes --edge-cache caches/edges --out checkpoints/hop1_contrastive
+     ```
 
 ## Models used
 

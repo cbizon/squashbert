@@ -25,7 +25,7 @@ from tqdm import tqdm
 
 from .cache import EmbeddingCache
 from .embed import EMBED_DIM, Embedder
-from .model import SquashMLP, cosine_loss
+from .model import MODELS, SquashMLP, cosine_loss
 from .sampler import PathSampler
 
 
@@ -97,19 +97,28 @@ def train(
     embedder: Embedder,
     out_dir: str | Path,
     device: str | None = None,
+    model_name: str = "mlp",
+    model_kwargs: dict | None = None,
+    trial: object | None = None,
 ) -> dict:
-    """Train until plateau (or max_steps). Saves best checkpoint to `out_dir/best.pt`."""
+    """Train until plateau (or max_steps). Saves best checkpoint to `out_dir/best.pt`.
+
+    If `trial` is an optuna Trial, intermediate eval cosines are reported and the
+    trial is pruned when Optuna decides it's unpromising.
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     device = device or embedder.device
 
-    model = SquashMLP(n_hops=cfg.n_hops, embed_dim=EMBED_DIM).to(device)
+    model_cls = MODELS[model_name]
+    model = model_cls(n_hops=cfg.n_hops, embed_dim=EMBED_DIM, **(model_kwargs or {})).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     model.train()
 
     rng = random.Random(cfg.train_rng_seed)
     best_cos = -1.0
     evals_since_best = 0
+    eval_count = 0
     history: list[dict] = []
 
     pbar = tqdm(range(cfg.max_steps), desc=f"{cfg.n_hops}-hop")
@@ -130,6 +139,14 @@ def train(
                 model, sampler, node_cache, edge_cache, embedder, cfg, device
             )
             history.append({"step": step + 1, "eval_cos": cos})
+            eval_count += 1
+
+            if trial is not None:
+                trial.report(cos, eval_count)
+                if trial.should_prune():
+                    import optuna
+                    raise optuna.TrialPruned()
+
             if cos > best_cos:
                 best_cos = cos
                 evals_since_best = 0
@@ -139,6 +156,7 @@ def train(
                         "n_hops": cfg.n_hops,
                         "step": step + 1,
                         "best_cos": best_cos,
+                        "model_name": model_name,
                     },
                     out_dir / "best.pt",
                 )

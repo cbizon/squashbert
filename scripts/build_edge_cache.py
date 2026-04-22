@@ -3,7 +3,7 @@ and write the edge-type list (pickled) alongside a fp16 embedding cache.
 
 Usage:
     uv run python scripts/build_edge_cache.py \\
-        --nodes path/to/nodes.jsonl --edges path/to/edges.jsonl --out caches/edges
+        --nodes path/to/nodes.jsonl --edges path/to/edges.jsonl --out caches/edges [--pooling cls]
 """
 
 from __future__ import annotations
@@ -27,6 +27,10 @@ def main() -> None:
     ap.add_argument("--edges", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--batch-size", type=int, default=256)
+    ap.add_argument(
+        "--pooling", choices=["cls", "mean"], default="cls",
+        help="Pooling strategy: cls (default, matches SAPBERT training) or mean",
+    )
     args = ap.parse_args()
 
     print(f"Loading nodes from {args.nodes}...")
@@ -56,13 +60,14 @@ def main() -> None:
     print("Loading SAPBERT...")
     embedder = Embedder()
 
-    print(f"Embedding {len(phrases):,} edge renderings on {embedder.device}...")
+    embed_fn = embedder.embed_cls if args.pooling == "cls" else embedder.embed_sentence
+    print(f"Embedding {len(phrases):,} edge renderings on {embedder.device} ({args.pooling} pooling)...")
     bs = args.batch_size
     for i in tqdm(range(0, len(phrases), bs)):
-        vecs = embedder.embed_cls(phrases[i : i + bs], batch_size=bs, max_length=16)
+        vecs = embed_fn(phrases[i : i + bs], batch_size=bs, max_length=16)
         cache.vectors[i : i + len(vecs)] = vecs.astype(np.float16)
     cache.flush()
-    print(f"Wrote {len(keys):,} edge vectors to {args.out}")
+    print(f"Wrote {len(keys):,} edge vectors ({args.pooling} pooling) to {args.out}")
 
 
 if __name__ == "__main__":

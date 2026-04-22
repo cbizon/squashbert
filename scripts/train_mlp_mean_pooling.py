@@ -1,11 +1,19 @@
-"""Train one hop-count MLP until plateau. Requires node and edge caches built first.
+"""Train 1-hop MLP using mean-pooled caches for both inputs and targets.
+
+This eliminates the pooling mismatch between [CLS]-pooled inputs and mean-pooled
+targets. Requires mean-pooled node and edge caches (built with --pooling mean).
 
 Usage:
-    uv run python scripts/train_mlp.py --hops 2 \\
-        --nodes path/to/nodes.jsonl \\
-        --node-cache caches/nodes \\
-        --edge-cache caches/edges \\
-        --out checkpoints/hop2
+    # 1. Build mean-pooled caches (one-time cost):
+    uv run python scripts/build_node_cache.py --pooling mean --nodes data/nodes.jsonl --out caches/nodes_mean
+    uv run python scripts/build_edge_cache.py --pooling mean --nodes data/nodes.jsonl --edges data/edges.jsonl --out caches/edges_mean
+
+    # 2. Train (fast — uses caches, same speed as original):
+    uv run python scripts/train_mlp_mean_pooling.py --hops 1 \\
+        --nodes data/nodes.jsonl \\
+        --node-cache caches/nodes_mean \\
+        --edge-cache caches/edges_mean \\
+        --out checkpoints/hop1_mean
 """
 
 from __future__ import annotations
@@ -18,7 +26,6 @@ from pathlib import Path
 from squashbert.cache import EmbeddingCache
 from squashbert.embed import Embedder
 from squashbert.kgx import build_category_index, load_nodes
-from squashbert.model import MODELS
 from squashbert.sampler import PathSampler
 from squashbert.train import TrainConfig, train
 
@@ -27,8 +34,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--hops", type=int, required=True, choices=[1, 2, 3])
     ap.add_argument("--nodes", required=True, type=Path)
-    ap.add_argument("--node-cache", required=True, type=Path)
-    ap.add_argument("--edge-cache", required=True, type=Path)
+    ap.add_argument("--node-cache", required=True, type=Path,
+                     help="Mean-pooled node cache (built with --pooling mean)")
+    ap.add_argument("--edge-cache", required=True, type=Path,
+                     help="Mean-pooled edge cache (built with --pooling mean)")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=3e-4)
@@ -36,10 +45,6 @@ def main() -> None:
     ap.add_argument("--eval-size", type=int, default=1024)
     ap.add_argument("--patience", type=int, default=5)
     ap.add_argument("--max-steps", type=int, default=200_000)
-    ap.add_argument(
-        "--model", choices=list(MODELS), default="mlp",
-        help="Model architecture: mlp (baseline), deep (4-layer residual), crossattn (transformer)",
-    )
     args = ap.parse_args()
 
     print("Loading nodes and caches...")
@@ -53,7 +58,7 @@ def main() -> None:
     print(f"  {len(nodes):,} nodes, {len(edge_types):,} edge types")
 
     embedder = Embedder()
-    print(f"Training {args.hops}-hop {args.model} on {embedder.device}...")
+    print(f"Training {args.hops}-hop MLP (mean-pooled caches) on {embedder.device}...")
 
     cfg = TrainConfig(
         n_hops=args.hops,
@@ -64,8 +69,7 @@ def main() -> None:
         patience_evals=args.patience,
         max_steps=args.max_steps,
     )
-    result = train(cfg, sampler, node_cache, edge_cache, embedder, out_dir=args.out,
-                   model_name=args.model)
+    result = train(cfg, sampler, node_cache, edge_cache, embedder, out_dir=args.out)
     (args.out / "history.json").write_text(json.dumps(result, indent=2))
     print(f"Done. Best held-out cos: {result['best_cos']:.4f}")
 

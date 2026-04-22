@@ -14,17 +14,20 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch import nn
 
 from .cache import EmbeddingCache
 from .embed import EMBED_DIM, Embedder
-from .model import SquashMLP
+from .model import MODELS, SquashMLP
 from .sampler import PathSampler
 from .train import _embed_targets, _stack_inputs
 
 
-def load_model(ckpt_path: str | Path, device: str) -> SquashMLP:
+def load_model(ckpt_path: str | Path, device: str) -> nn.Module:
     ckpt = torch.load(ckpt_path, map_location=device)
-    model = SquashMLP(n_hops=ckpt["n_hops"], embed_dim=EMBED_DIM).to(device)
+    model_name = ckpt.get("model_name", "mlp")
+    model_cls = MODELS[model_name]
+    model = model_cls(n_hops=ckpt["n_hops"], embed_dim=EMBED_DIM).to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
     return model

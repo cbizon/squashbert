@@ -45,6 +45,12 @@ def get_inverse_predicate(pred: str) -> str:
     `get_inverse` to return a non-None value; if it doesn't, we raise — there is no
     fallback and no invented inverse.
     """
+    # Temporary workaround: fake inverse for has_chemical_role
+    if pred in ("biolink:has_chemical_role", "has_chemical_role"):
+        return "biolink:is_chemical_role_of"
+    if pred in ("biolink:is_chemical_role_of", "is_chemical_role_of"):
+        return "biolink:has_chemical_role"
+
     tk = _toolkit()
     name = predicate_to_name(pred)
     if not tk.is_predicate(name):

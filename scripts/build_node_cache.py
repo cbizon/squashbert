@@ -1,8 +1,8 @@
-"""Scan nodes.jsonl and write a fp16 [CLS]-pooled SAPBERT embedding cache.
+"""Scan nodes.jsonl and write a fp16 SAPBERT embedding cache.
 
 Usage:
     uv run python scripts/build_node_cache.py \\
-        --nodes path/to/nodes.jsonl --out caches/nodes [--batch-size 256]
+        --nodes path/to/nodes.jsonl --out caches/nodes [--batch-size 256] [--pooling cls]
 """
 
 from __future__ import annotations
@@ -24,6 +24,10 @@ def main() -> None:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--max-length", type=int, default=32)
+    ap.add_argument(
+        "--pooling", choices=["cls", "mean"], default="cls",
+        help="Pooling strategy: cls (default, matches SAPBERT training) or mean",
+    )
     args = ap.parse_args()
 
     print(f"Loading nodes from {args.nodes}...")
@@ -36,15 +40,16 @@ def main() -> None:
     print("Loading SAPBERT...")
     embedder = Embedder()
 
-    print(f"Embedding on {embedder.device}...")
+    embed_fn = embedder.embed_cls if args.pooling == "cls" else embedder.embed_sentence
+    print(f"Embedding on {embedder.device} ({args.pooling} pooling)...")
     bs = args.batch_size
     for i in tqdm(range(0, len(ids), bs)):
         batch_ids = ids[i : i + bs]
         names = [nodes[nid].name for nid in batch_ids]
-        vecs = embedder.embed_cls(names, batch_size=bs, max_length=args.max_length)
+        vecs = embed_fn(names, batch_size=bs, max_length=args.max_length)
         cache.vectors[i : i + len(batch_ids)] = vecs.astype(np.float16)
     cache.flush()
-    print(f"Wrote {len(ids):,} vectors to {args.out}")
+    print(f"Wrote {len(ids):,} vectors ({args.pooling} pooling) to {args.out}")
 
 
 if __name__ == "__main__":
